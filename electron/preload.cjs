@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('alunReader', {
   openRecent: (filePath) => ipcRenderer.invoke('file:open-recent', filePath),
   saveMarkdown: (payload) => ipcRenderer.invoke('file:save-markdown', payload),
   newWindow: () => ipcRenderer.invoke('window:new-document'),
+  downloadUpdate: (asset) => ipcRenderer.invoke('update:download-open', asset),
   onMenuCommand: (callback) => {
     const listener = (_event, message) => callback(message);
     ipcRenderer.on('menu-command', listener);

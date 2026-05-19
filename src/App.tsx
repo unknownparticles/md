@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MarkdownPreview } from './components/MarkdownPreview';
-import { ExternalLink, LayoutDashboard, PanelLeftClose, PanelRightClose, Settings2, FilePlus2, FileUp, RefreshCcw, Save, Sun, Moon, Monitor, X, Presentation, Minimize2 } from 'lucide-react';
+import { Download, ExternalLink, LayoutDashboard, PanelLeftClose, PanelRightClose, Settings2, FilePlus2, FileUp, RefreshCcw, Save, Sun, Moon, Monitor, X, Presentation, Minimize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import appIcon from '../assets/icon.png';
 import { GITHUB_LATEST_RELEASE_API, GITHUB_RELEASES_URL } from './release';
@@ -13,9 +13,26 @@ import { GITHUB_LATEST_RELEASE_API, GITHUB_RELEASES_URL } from './release';
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 type UpdateStatus = {
-  state: 'idle' | 'checking' | 'success' | 'failed';
+  state: 'idle' | 'checking' | 'available' | 'latest' | 'downloading' | 'downloaded' | 'failed';
   message: string;
   url?: string;
+  latestVersion?: string;
+  asset?: UpdateReleaseAsset;
+};
+
+type RuntimePlatform = 'mac' | 'windows' | 'linux' | 'unknown';
+
+type UpdateReleaseAsset = {
+  name: string;
+  browser_download_url: string;
+  size?: number;
+};
+
+type GitHubReleaseResponse = {
+  tag_name?: string;
+  name?: string;
+  html_url?: string;
+  assets?: UpdateReleaseAsset[];
 };
 
 const DEFAULT_MARKDOWN = `# 欢迎使用 alun reader
@@ -92,6 +109,60 @@ const THEME_OPTIONS: Array<{
   },
 ];
 
+const CURRENT_VERSION = import.meta.env.PACKAGE_VERSION;
+
+function normalizeVersion(version: string) {
+  return version.trim().replace(/^v/i, '').split('-')[0];
+}
+
+function compareVersions(left: string, right: string) {
+  const leftParts = normalizeVersion(left).split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const rightParts = normalizeVersion(right).split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const maxLength = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const diff = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (diff !== 0) return diff;
+  }
+
+  return 0;
+}
+
+function getRuntimePlatform(): RuntimePlatform {
+  const platform = navigator.platform.toLowerCase();
+  const userAgent = navigator.userAgent.toLowerCase();
+
+  if (platform.includes('mac')) return 'mac';
+  if (platform.includes('win')) return 'windows';
+  if (platform.includes('linux') || userAgent.includes('linux')) return 'linux';
+  return 'unknown';
+}
+
+function getPlatformAssetPriority(platform: RuntimePlatform) {
+  if (platform === 'mac') return ['.dmg', '.zip'];
+  if (platform === 'windows') return ['.exe', '.msi', '.zip'];
+  if (platform === 'linux') return ['.appimage', '.deb'];
+  return ['.dmg', '.exe', '.appimage', '.deb', '.zip'];
+}
+
+function pickUpdateAsset(assets: UpdateReleaseAsset[] = []) {
+  const priorities = getPlatformAssetPriority(getRuntimePlatform());
+  const downloadableAssets = assets.filter((asset) => Boolean(asset.browser_download_url));
+
+  for (const extension of priorities) {
+    const matchedAsset = downloadableAssets.find((asset) => asset.name.toLowerCase().endsWith(extension));
+    if (matchedAsset) return matchedAsset;
+  }
+
+  return null;
+}
+
+function formatFileSize(size?: number) {
+  if (!size) return '';
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
 export default function App() {
   const [content, setContent] = useState(DEFAULT_MARKDOWN);
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
@@ -104,7 +175,7 @@ export default function App() {
   const [systemPrefersDark, setSystemPrefersDark] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
     state: 'idle',
-    message: '从 GitHub Release 检查最新版本。',
+    message: `当前版本 v${CURRENT_VERSION}，从 GitHub Release 检查最新安装包。`,
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -186,11 +257,46 @@ export default function App() {
         return;
       }
 
-      const release = await response.json();
+      const release = await response.json() as GitHubReleaseResponse;
+      const latestVersion = release.tag_name ?? release.name ?? '';
+      const releaseUrl = release.html_url ?? GITHUB_RELEASES_URL;
+
+      if (!latestVersion) {
+        setUpdateStatus({
+          state: 'failed',
+          message: '检查失败：Release 没有可识别的版本号。',
+          url: releaseUrl,
+        });
+        return;
+      }
+
+      if (compareVersions(latestVersion, CURRENT_VERSION) <= 0) {
+        setUpdateStatus({
+          state: 'latest',
+          message: `已是最新版本：当前 v${CURRENT_VERSION}，最新 ${latestVersion}。`,
+          latestVersion,
+          url: releaseUrl,
+        });
+        return;
+      }
+
+      const asset = pickUpdateAsset(release.assets);
+      if (!asset) {
+        setUpdateStatus({
+          state: 'failed',
+          message: `发现新版本 ${latestVersion}，但没有匹配当前平台的安装包。`,
+          latestVersion,
+          url: releaseUrl,
+        });
+        return;
+      }
+
       setUpdateStatus({
-        state: 'success',
-        message: `最新版本：${release.tag_name ?? release.name ?? '未知版本'}`,
-        url: release.html_url ?? GITHUB_RELEASES_URL,
+        state: 'available',
+        message: `发现新版本 ${latestVersion}，可下载 ${asset.name}${formatFileSize(asset.size) ? `（${formatFileSize(asset.size)}）` : ''}。`,
+        latestVersion,
+        asset,
+        url: releaseUrl,
       });
     } catch (error) {
       setUpdateStatus({
@@ -200,6 +306,44 @@ export default function App() {
       });
     }
   }, []);
+
+  const downloadLatestUpdate = useCallback(async () => {
+    if (!updateStatus.asset) return;
+
+    const asset = updateStatus.asset;
+    setUpdateStatus((status) => ({
+      ...status,
+      state: 'downloading',
+      message: `正在下载 ${asset.name}...`,
+    }));
+
+    if (!window.alunReader) {
+      window.open(asset.browser_download_url, '_blank', 'noopener,noreferrer');
+      setUpdateStatus((status) => ({
+        ...status,
+        state: 'downloaded',
+        message: '已打开浏览器下载链接。桌面端会直接下载并打开安装包。',
+      }));
+      return;
+    }
+
+    try {
+      const result = await window.alunReader.downloadUpdate(asset);
+      setUpdateStatus((status) => ({
+        ...status,
+        state: result.opened ? 'downloaded' : 'failed',
+        message: result.opened
+          ? `已下载并打开安装包：${asset.name}。请按系统安装器提示完成更新。`
+          : `已下载到 ${result.filePath}，但系统未能自动打开：${result.openError ?? '未知错误'}。`,
+      }));
+    } catch (error) {
+      setUpdateStatus((status) => ({
+        ...status,
+        state: 'failed',
+        message: error instanceof Error ? `下载失败：${error.message}` : '下载失败：未知错误。',
+      }));
+    }
+  }, [updateStatus.asset]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -332,7 +476,7 @@ export default function App() {
         <header className={`h-16 border-b flex items-center justify-between px-8 z-10 shrink-0 transition-colors ${isDarkTheme ? 'bg-[#151b22] border-slate-700/70' : 'bg-white border-slate-200'}`}>
           <div className="flex items-center gap-3">
             <h1 className={`font-display font-semibold text-xl tracking-tight ${isDarkTheme ? 'text-slate-100' : 'text-slate-800'}`}>alun reader</h1>
-            <span className={`border text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${accentSoftClass}`}>v{import.meta.env.PACKAGE_VERSION}</span>
+            <span className={`border text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${accentSoftClass}`}>v{CURRENT_VERSION}</span>
             <span className={`max-w-[320px] truncate text-xs ${isDarkTheme ? 'text-slate-400' : 'text-slate-500'}`}>
               {isDirty ? '未保存 - ' : ''}{statusMessage}
             </span>
@@ -492,15 +636,28 @@ export default function App() {
                     <p className={`text-sm ${updateStatus.state === 'failed' ? isDarkTheme ? 'text-red-200' : 'text-red-700' : isDarkTheme ? 'text-slate-300' : 'text-slate-700'}`}>
                       {updateStatus.message}
                     </p>
-                    <div className="mt-3 flex items-center gap-2">
+                    <p className={`mt-2 text-xs ${isDarkTheme ? 'text-slate-500' : 'text-slate-500'}`}>
+                      当前版本：v{CURRENT_VERSION}{updateStatus.latestVersion ? ` · 最新版本：${updateStatus.latestVersion}` : ''}
+                    </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       <button
                         onClick={checkForUpdates}
-                        disabled={updateStatus.state === 'checking'}
+                        disabled={updateStatus.state === 'checking' || updateStatus.state === 'downloading'}
                         className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${isDarkTheme ? 'border-slate-700 text-slate-100 hover:bg-slate-800' : 'border-slate-300 text-slate-700 hover:bg-slate-100'}`}
                       >
                         <RefreshCcw size={15} />
                         检查更新
                       </button>
+                      {updateStatus.asset && (
+                        <button
+                          onClick={downloadLatestUpdate}
+                          disabled={updateStatus.state === 'downloading'}
+                          className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${isDarkTheme ? 'bg-slate-200 text-slate-950 border-slate-200 hover:bg-white' : 'bg-slate-900 text-white border-slate-900 hover:bg-slate-700'}`}
+                        >
+                          <Download size={15} />
+                          {window.alunReader ? '下载并打开安装包' : '打开下载链接'}
+                        </button>
+                      )}
                       <a
                         href={updateStatus.url ?? GITHUB_RELEASES_URL}
                         target="_blank"

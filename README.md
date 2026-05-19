@@ -16,7 +16,7 @@ alun reader 是一个跨平台桌面 Markdown 阅读和编辑工具，支持 Mar
 - Zen 模式，只保留预览内容，适合投屏讲解
 - 真实文件操作：新建窗口、导入、保存、另存为
 - 最近打开文件列表，桌面端会持久保存
-- GitHub Release 更新检查
+- 应用内 GitHub Release 更新检查，发现新版后可下载并打开当前平台安装包
 - GitHub Pages 发布页
 - macOS、Windows、Linux 桌面端打包配置
 
@@ -74,6 +74,14 @@ npm run desktop
 - 最新 Release API：<https://api.github.com/repos/unknownparticles/md/releases/latest>
 
 应用内“设置 -> 更新 -> 检查更新”和发布页的“检查更新”都使用 GitHub Release API。如果仓库没有 Release，检查结果会显示失败。
+
+桌面端检测到新版本时，会按当前系统优先选择安装包：
+
+- macOS：优先 `.dmg`，其次 `.zip`
+- Windows：优先 `.exe`，其次 `.msi`、`.zip`
+- Linux：优先 `.AppImage`，其次 `.deb`
+
+点击“下载并打开安装包”后，应用会把 Release 产物下载到本机应用数据目录的 `updates/` 子目录，并调用系统默认安装器打开。覆盖安装仍由系统安装器完成，这样可以保留 macOS、Windows 和 Linux 各自的签名、权限和安装流程。
 
 ## Release 上传
 

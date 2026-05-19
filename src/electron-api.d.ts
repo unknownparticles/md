@@ -10,6 +10,17 @@ export interface SaveMarkdownPayload {
   content: string;
 }
 
+export interface UpdateAssetPayload {
+  name: string;
+  browser_download_url: string;
+}
+
+export interface UpdateDownloadResult {
+  filePath: string;
+  opened: boolean;
+  openError?: string;
+}
+
 export interface MenuCommandMessage {
   command: 'new' | 'open' | 'open-recent' | 'load-document' | 'save' | 'save-as' | 'set-theme' | 'toggle-editor' | 'toggle-zen';
   payload?: {
@@ -24,6 +35,7 @@ export interface AlunReaderApi {
   openRecent: (filePath: string) => Promise<MarkdownFilePayload>;
   saveMarkdown: (payload: SaveMarkdownPayload) => Promise<{filePath: string} | null>;
   newWindow: () => Promise<void>;
+  downloadUpdate: (asset: UpdateAssetPayload) => Promise<UpdateDownloadResult>;
   onMenuCommand: (callback: (message: MenuCommandMessage) => void) => () => void;
 }
 

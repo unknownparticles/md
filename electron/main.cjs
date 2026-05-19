@@ -1,6 +1,9 @@
 const {app, BrowserWindow, Menu, dialog, ipcMain, shell} = require('electron');
+const {createWriteStream} = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const {Readable} = require('node:stream');
+const {pipeline} = require('node:stream/promises');
 
 const recentFilesStorePath = path.join(app.getPath('userData'), 'recent-files.json');
 let recentFiles = [];
@@ -97,6 +100,57 @@ async function saveMarkdownFile(filePath, content) {
   await fs.writeFile(targetPath, content, 'utf8');
   rememberRecentFile(targetPath);
   return {filePath: targetPath};
+}
+
+function assertTrustedUpdateUrl(downloadUrl) {
+  const parsedUrl = new URL(downloadUrl);
+  const isGitHubReleaseAsset =
+    parsedUrl.protocol === 'https:' &&
+    parsedUrl.hostname === 'github.com' &&
+    parsedUrl.pathname.startsWith('/unknownparticles/md/releases/download/');
+
+  if (!isGitHubReleaseAsset) {
+    throw new Error('更新包地址不是 alun reader 的 GitHub Release 产物。');
+  }
+}
+
+async function downloadAndOpenUpdateAsset(asset) {
+  if (!asset?.name || !asset?.browser_download_url) {
+    throw new Error('缺少更新包名称或下载地址。');
+  }
+
+  assertTrustedUpdateUrl(asset.browser_download_url);
+
+  if (typeof fetch !== 'function') {
+    throw new Error('当前 Electron 运行环境不支持内置下载能力。');
+  }
+
+  const updatesDirectory = path.join(app.getPath('userData'), 'updates');
+  const safeFileName = path.basename(asset.name);
+  const targetPath = path.join(updatesDirectory, safeFileName);
+
+  await fs.mkdir(updatesDirectory, {recursive: true});
+
+  const response = await fetch(asset.browser_download_url, {
+    headers: {
+      Accept: 'application/octet-stream',
+      'User-Agent': 'alun-reader-updater',
+    },
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(`下载更新包失败：HTTP ${response.status}`);
+  }
+
+  // 主进程负责写入磁盘，保持 renderer 沙箱开启；下载完成后交给系统安装器处理。
+  await pipeline(Readable.fromWeb(response.body), createWriteStream(targetPath));
+  const openError = await shell.openPath(targetPath);
+
+  return {
+    filePath: targetPath,
+    opened: openError.length === 0,
+    openError: openError || undefined,
+  };
 }
 
 function buildApplicationMenu() {
@@ -270,3 +324,4 @@ ipcMain.handle('file:save-markdown', (_event, payload) => saveMarkdownFile(paylo
 ipcMain.handle('window:new-document', () => {
   createMainWindow();
 });
+ipcMain.handle('update:download-open', (_event, asset) => downloadAndOpenUpdateAsset(asset));
