@@ -14,3 +14,4 @@
 - 增加 GitHub Pages 发布页和基于 GitHub Release 的更新检查
 - 增加 Release 发布脚本，Release 不存在时可创建并上传关键构建产物
 - 应用内更新检查支持版本比较、平台安装包匹配、下载并打开安装包
+- 更新检查增加 GitHub Pages 静态清单兜底，避免 GitHub API 匿名限流导致 403 后完全不可用

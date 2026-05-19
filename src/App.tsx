@@ -8,7 +8,7 @@ import { MarkdownPreview } from './components/MarkdownPreview';
 import { Download, ExternalLink, LayoutDashboard, PanelLeftClose, PanelRightClose, Settings2, FilePlus2, FileUp, RefreshCcw, Save, Sun, Moon, Monitor, X, Presentation, Minimize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import appIcon from '../assets/icon.png';
-import { GITHUB_LATEST_RELEASE_API, GITHUB_RELEASES_URL } from './release';
+import { GITHUB_LATEST_RELEASE_API, GITHUB_RELEASES_URL, UPDATE_MANIFEST_URL } from './release';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -34,6 +34,8 @@ type GitHubReleaseResponse = {
   html_url?: string;
   assets?: UpdateReleaseAsset[];
 };
+
+type UpdateSource = 'GitHub Release API' | '静态更新清单';
 
 const DEFAULT_MARKDOWN = `# 欢迎使用 alun reader
 
@@ -163,6 +165,48 @@ function formatFileSize(size?: number) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
+async function fetchLatestReleaseFromApi() {
+  const response = await fetch(GITHUB_LATEST_RELEASE_API, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitHub Release 返回 ${response.status}`);
+  }
+
+  return await response.json() as GitHubReleaseResponse;
+}
+
+async function fetchLatestReleaseFromManifest() {
+  const response = await fetch(UPDATE_MANIFEST_URL, {
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error(`静态更新清单返回 ${response.status}`);
+  }
+
+  return await response.json() as GitHubReleaseResponse;
+}
+
+async function fetchLatestRelease() {
+  try {
+    return {
+      release: await fetchLatestReleaseFromApi(),
+      source: 'GitHub Release API' as UpdateSource,
+    };
+  } catch (apiError) {
+    // GitHub API 匿名额度很低；静态清单由 GitHub Pages 承载，避免普通用户检查更新被限流阻断。
+    return {
+      release: await fetchLatestReleaseFromManifest(),
+      source: '静态更新清单' as UpdateSource,
+      fallbackReason: apiError instanceof Error ? apiError.message : 'GitHub Release API 不可用',
+    };
+  }
+}
+
 export default function App() {
   const [content, setContent] = useState(DEFAULT_MARKDOWN);
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
@@ -238,33 +282,19 @@ export default function App() {
   const checkForUpdates = useCallback(async () => {
     setUpdateStatus({
       state: 'checking',
-      message: '正在检查 GitHub Release...',
+      message: '正在检查更新...',
     });
 
     try {
-      const response = await fetch(GITHUB_LATEST_RELEASE_API, {
-        headers: {
-          Accept: 'application/vnd.github+json',
-        },
-      });
-
-      if (!response.ok) {
-        setUpdateStatus({
-          state: 'failed',
-          message: `检查失败：GitHub Release 返回 ${response.status}。`,
-          url: GITHUB_RELEASES_URL,
-        });
-        return;
-      }
-
-      const release = await response.json() as GitHubReleaseResponse;
+      const {release, source, fallbackReason} = await fetchLatestRelease();
       const latestVersion = release.tag_name ?? release.name ?? '';
       const releaseUrl = release.html_url ?? GITHUB_RELEASES_URL;
+      const sourceHint = source === '静态更新清单' && fallbackReason ? `（GitHub API 不可用：${fallbackReason}，已改用静态清单）` : '';
 
       if (!latestVersion) {
         setUpdateStatus({
           state: 'failed',
-          message: '检查失败：Release 没有可识别的版本号。',
+          message: `检查失败：${source} 没有可识别的版本号。`,
           url: releaseUrl,
         });
         return;
@@ -273,7 +303,7 @@ export default function App() {
       if (compareVersions(latestVersion, CURRENT_VERSION) <= 0) {
         setUpdateStatus({
           state: 'latest',
-          message: `已是最新版本：当前 v${CURRENT_VERSION}，最新 ${latestVersion}。`,
+          message: `已是最新版本：当前 v${CURRENT_VERSION}，最新 ${latestVersion}。${sourceHint}`,
           latestVersion,
           url: releaseUrl,
         });
@@ -284,7 +314,7 @@ export default function App() {
       if (!asset) {
         setUpdateStatus({
           state: 'failed',
-          message: `发现新版本 ${latestVersion}，但没有匹配当前平台的安装包。`,
+          message: `发现新版本 ${latestVersion}，但没有匹配当前平台的安装包。${sourceHint}`,
           latestVersion,
           url: releaseUrl,
         });
@@ -293,7 +323,7 @@ export default function App() {
 
       setUpdateStatus({
         state: 'available',
-        message: `发现新版本 ${latestVersion}，可下载 ${asset.name}${formatFileSize(asset.size) ? `（${formatFileSize(asset.size)}）` : ''}。`,
+        message: `发现新版本 ${latestVersion}，可下载 ${asset.name}${formatFileSize(asset.size) ? `（${formatFileSize(asset.size)}）` : ''}。${sourceHint}`,
         latestVersion,
         asset,
         url: releaseUrl,
@@ -301,7 +331,7 @@ export default function App() {
     } catch (error) {
       setUpdateStatus({
         state: 'failed',
-        message: '检查失败：无法访问 GitHub Release。',
+        message: error instanceof Error ? `检查失败：${error.message}。` : '检查失败：无法访问更新来源。',
         url: GITHUB_RELEASES_URL,
       });
     }

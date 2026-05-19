@@ -72,8 +72,9 @@ npm run desktop
 - 仓库地址：<https://github.com/unknownparticles/md.git>
 - Release 页面：<https://github.com/unknownparticles/md/releases>
 - 最新 Release API：<https://api.github.com/repos/unknownparticles/md/releases/latest>
+- 静态更新清单：<https://unknownparticles.github.io/md/update.json>
 
-应用内“设置 -> 更新 -> 检查更新”和发布页的“检查更新”都使用 GitHub Release API。如果仓库没有 Release，检查结果会显示失败。
+应用内“设置 -> 更新 -> 检查更新”和发布页的“检查更新”会优先使用 GitHub Release API。如果 GitHub API 匿名额度耗尽或暂时不可用，会回退到 GitHub Pages 上的静态更新清单 `docs/update.json`。如果仓库没有 Release，且静态清单也不可用，检查结果会显示失败。
 
 桌面端检测到新版本时，会按当前系统优先选择安装包：
 
@@ -82,6 +83,8 @@ npm run desktop
 - Linux：优先 `.AppImage`，其次 `.deb`
 
 点击“下载并打开安装包”后，应用会把 Release 产物下载到本机应用数据目录的 `updates/` 子目录，并调用系统默认安装器打开。覆盖安装仍由系统安装器完成，这样可以保留 macOS、Windows 和 Linux 各自的签名、权限和安装流程。
+
+手动上传 Release 产物后，请同步更新 `docs/update.json` 中的 `tag_name`、`html_url`、`assets[].name`、`assets[].browser_download_url` 和 `assets[].size`。这个文件用于 GitHub API 403 限流时的兜底更新检查。
 
 ## Release 上传
 
