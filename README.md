@@ -75,6 +75,19 @@ npm run desktop
 
 应用内“设置 -> 更新 -> 检查更新”和发布页的“检查更新”都使用 GitHub Release API。如果仓库没有 Release，检查结果会显示失败。
 
+## Release 上传
+
+先完成对应平台打包，再发布 Release：
+
+```bash
+npm run package:mac
+GITHUB_TOKEN=你的令牌 npm run release:publish
+```
+
+`release:publish` 会读取 `package.json` 的版本号，例如 `1.0.0` 会使用 `v1.0.0` tag。脚本会检查 GitHub Release 是否存在；不存在就创建 Release，并上传 `release/` 目录中的关键产物，包括 `.dmg`、`.zip`、`.exe`、`.AppImage` 和 `.deb`。
+
+如果缺少 `GITHUB_TOKEN` 或 `GH_TOKEN`，脚本会失败，不会假装发布成功。
+
 ## 打包
 
 macOS 双击打包：

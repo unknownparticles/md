@@ -19,6 +19,7 @@
     "package:win": "bash scripts/package-desktop.sh win",
     "package:linux": "bash scripts/package-desktop.sh linux",
     "package:all": "bash scripts/package-desktop.sh all",
+    "release:publish": "node scripts/publish-release.mjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"

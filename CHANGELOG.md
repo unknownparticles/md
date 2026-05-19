@@ -12,3 +12,4 @@
 - 移除无效的假入口，减少误导性 UI
 - 增加 PolyForm Noncommercial License 1.0.0，明确禁止商用，并允许所有开源非商用项目使用
 - 增加 GitHub Pages 发布页和基于 GitHub Release 的更新检查
+- 增加 Release 发布脚本，Release 不存在时可创建并上传关键构建产物
