@@ -1,0 +1,6 @@
+{
+  "name": "alun reader",
+  "description": "A high-performance markdown reader with syntax highlighting and Mermaid diagram support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

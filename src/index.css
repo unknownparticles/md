@@ -1,0 +1,140 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-[#f6f7f8] text-neutral-900 antialiased;
+  }
+}
+
+.markdown-table-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 transparent;
+}
+
+.markdown-table-scroll code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Ensure Mermaid SVG text is always crisp and visible */
+.mermaid-container svg {
+  max-width: 100%;
+  width: 100%;
+  height: auto;
+  background: transparent;
+}
+
+.mermaid-container svg,
+.mermaid-container svg * {
+  color: #111827 !important;
+}
+
+.mermaid-container .label text,
+.mermaid-container .label tspan,
+.mermaid-container .edgeLabel,
+.mermaid-container .edgeLabel span,
+.mermaid-container .cluster text,
+.mermaid-container .cluster tspan,
+.mermaid-container .sectionTitle,
+.mermaid-container .actor,
+.mermaid-container .actor-line,
+.mermaid-container .messageText {
+  fill: #111827 !important;
+  color: #111827 !important;
+  font-weight: 500 !important;
+}
+
+.mermaid-container .node rect,
+.mermaid-container .node circle,
+.mermaid-container .node ellipse,
+.mermaid-container .node polygon,
+.mermaid-container .node path {
+  fill: #f3f4f6 !important;
+  stroke: #4b5563 !important;
+}
+
+.mermaid-container .cluster rect {
+  fill: #ffffff !important;
+  stroke: #9ca3af !important;
+}
+
+.mermaid-container .edgeLabel,
+.mermaid-container .edgeLabel p {
+  background-color: #ffffff !important;
+  fill: #111827 !important;
+  color: #111827 !important;
+}
+
+.mermaid-container .labelBkg {
+  background-color: #ffffff !important;
+  fill: #ffffff !important;
+}
+
+.mermaid-container .flowchart-link,
+.mermaid-container .messageLine0,
+.mermaid-container .messageLine1,
+.mermaid-container .transition,
+.mermaid-container .relationshipLine {
+  stroke: #374151 !important;
+  stroke-width: 2px !important;
+}
+
+.mermaid-container[data-theme="dark"] svg,
+.mermaid-container[data-theme="dark"] svg * {
+  color: #e5e7eb !important;
+}
+
+.mermaid-container[data-theme="dark"] .label text,
+.mermaid-container[data-theme="dark"] .label tspan,
+.mermaid-container[data-theme="dark"] .edgeLabel,
+.mermaid-container[data-theme="dark"] .edgeLabel span,
+.mermaid-container[data-theme="dark"] .cluster text,
+.mermaid-container[data-theme="dark"] .cluster tspan,
+.mermaid-container[data-theme="dark"] .sectionTitle,
+.mermaid-container[data-theme="dark"] .actor,
+.mermaid-container[data-theme="dark"] .actor-line,
+.mermaid-container[data-theme="dark"] .messageText {
+  fill: #e5e7eb !important;
+  color: #e5e7eb !important;
+}
+
+.mermaid-container[data-theme="dark"] .node rect,
+.mermaid-container[data-theme="dark"] .node circle,
+.mermaid-container[data-theme="dark"] .node ellipse,
+.mermaid-container[data-theme="dark"] .node polygon,
+.mermaid-container[data-theme="dark"] .node path {
+  fill: #1f2937 !important;
+  stroke: #94a3b8 !important;
+}
+
+.mermaid-container[data-theme="dark"] .cluster rect {
+  fill: #151b22 !important;
+  stroke: #64748b !important;
+}
+
+.mermaid-container[data-theme="dark"] .edgeLabel,
+.mermaid-container[data-theme="dark"] .edgeLabel p {
+  background-color: #11161c !important;
+  fill: #e5e7eb !important;
+  color: #e5e7eb !important;
+}
+
+.mermaid-container[data-theme="dark"] .labelBkg {
+  background-color: #11161c !important;
+  fill: #11161c !important;
+}
+
+.mermaid-container[data-theme="dark"] .flowchart-link,
+.mermaid-container[data-theme="dark"] .messageLine0,
+.mermaid-container[data-theme="dark"] .messageLine1,
+.mermaid-container[data-theme="dark"] .transition,
+.mermaid-container[data-theme="dark"] .relationshipLine {
+  stroke: #94a3b8 !important;
+}

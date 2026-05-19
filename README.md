@@ -1,0 +1,118 @@
+# alun reader
+
+alun reader 是一个跨平台桌面 Markdown 阅读和编辑工具，支持 Markdown 预览、代码高亮、Mermaid 图表、Zen 投屏模式和本地文件保存。
+
+## 当前版本
+
+- 版本：`1.0.0`
+- 版本说明：见 [CHANGELOG.md](./CHANGELOG.md)
+- 许可证：`PolyForm-Noncommercial-1.0.0`，仅允许非商业用途
+
+## 功能
+
+- Markdown 编辑和实时预览
+- Mermaid 图表渲染、缩放、重置和全屏查看
+- 浅色、深色、跟随系统主题
+- Zen 模式，只保留预览内容，适合投屏讲解
+- 真实文件操作：新建窗口、导入、保存、另存为
+- 最近打开文件列表，桌面端会持久保存
+- GitHub Release 更新检查
+- GitHub Pages 发布页
+- macOS、Windows、Linux 桌面端打包配置
+
+## 本地运行
+
+前置要求：
+
+- Node.js
+- npm
+
+安装依赖：
+
+```bash
+npm install
+```
+
+启动 Web 开发服务：
+
+```bash
+npm run dev
+```
+
+启动桌面端：
+
+```bash
+npm run desktop
+```
+
+## 桌面端使用说明
+
+文件菜单：
+
+- `新建窗口`：打开一个独立编辑窗口
+- `导入...`：在当前窗口打开 Markdown 文件
+- `在新窗口中导入...`：打开文件并放到新窗口中
+- `保存`：保存到当前文件；未绑定文件时会弹出保存对话框
+- `另存为...`：选择新路径保存
+- `最近打开`：从持久化列表中打开最近文件
+
+视图菜单：
+
+- 选择浅色、深色或跟随系统主题
+- 切换编辑器
+- 进入或退出 Zen 模式
+- 系统全屏
+
+浏览器开发模式没有系统保存对话框，点击保存会下载 Markdown 文件。桌面端会真实写入本地文件。
+
+## 发布页和更新检查
+
+发布页位于 `docs/index.html`。仓库开启 GitHub Pages 时，建议选择 `main` 分支的 `docs/` 目录作为 Pages 来源。
+
+- 仓库地址：<https://github.com/unknownparticles/md.git>
+- Release 页面：<https://github.com/unknownparticles/md/releases>
+- 最新 Release API：<https://api.github.com/repos/unknownparticles/md/releases/latest>
+
+应用内“设置 -> 更新 -> 检查更新”和发布页的“检查更新”都使用 GitHub Release API。如果仓库没有 Release，检查结果会显示失败。
+
+## 打包
+
+macOS 双击打包：
+
+```bash
+./一键打包.command
+```
+
+命令行一键打包：
+
+```bash
+npm run package:mac
+npm run package:win
+npm run package:linux
+npm run package:all
+```
+
+直接调用 electron-builder：
+
+```bash
+npm run build:mac
+npm run build:win
+npm run build:linux
+npm run build:desktop
+```
+
+打包产物输出到 `release/`。文件名会包含真实版本号，例如 `alun reader-1.0.0-arm64.dmg`。
+
+## 开发约定
+
+- 不提交 `node_modules/`、`dist/`、`release/` 等构建产物
+- 修改渲染逻辑后至少运行 `npm run lint` 和 `npm run build`
+- Electron 文件访问只放在主进程，前端通过 preload 暴露的受控 API 调用
+
+## 许可证
+
+本项目采用 [PolyForm Noncommercial License 1.0.0](./LICENSE.md)。
+
+你可以在非商业场景中查看、学习、修改和分发本项目。所有源码公开、开源或源码可见的非商业项目，都可以使用、修改、集成和分发本项目及其派生作品。
+
+未经额外书面授权，不得将本项目或其派生作品用于商业用途，包括但不限于售卖、商业 SaaS、商业内部工具、商业客户交付或其他以商业收益为目的的使用。
