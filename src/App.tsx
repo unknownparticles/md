@@ -8,7 +8,7 @@ import { MarkdownPreview } from './components/MarkdownPreview';
 import { Download, ExternalLink, LayoutDashboard, PanelLeftClose, PanelRightClose, Settings2, FilePlus2, FileUp, RefreshCcw, Save, Sun, Moon, Monitor, X, Presentation, Minimize2, FileText, GripVertical, PanelLeftOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import appIcon from '../assets/icon.png';
-import { GITHUB_LATEST_RELEASE_API, GITHUB_RELEASES_URL, UPDATE_MANIFEST_URL } from './release';
+import { GITHUB_LATEST_RELEASE_API, GITHUB_LATEST_RELEASE_URL, GITHUB_RELEASES_URL, UPDATE_MANIFEST_URL } from './release';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -123,6 +123,10 @@ const THEME_OPTIONS: Array<{
 
 const CURRENT_VERSION = import.meta.env.PACKAGE_VERSION;
 
+function isDesktopRuntime() {
+  return Boolean(window.alunReader);
+}
+
 function normalizeVersion(version: string) {
   return version.trim().replace(/^v/i, '').split('-')[0];
 }
@@ -167,6 +171,16 @@ function pickUpdateAsset(assets: UpdateReleaseAsset[] = []) {
   }
 
   return null;
+}
+
+function pickMacArmDownloadAsset(assets: UpdateReleaseAsset[] = []) {
+  const downloadableAssets = assets.filter((asset) => Boolean(asset.browser_download_url));
+  const macArmAsset = downloadableAssets.find((asset) => {
+    const name = asset.name.toLowerCase();
+    return name.endsWith('.dmg') && (name.includes('arm64') || name.includes('aarch64') || name.includes('apple'));
+  });
+
+  return macArmAsset ?? downloadableAssets.find((asset) => asset.name.toLowerCase().endsWith('.dmg')) ?? null;
 }
 
 function formatFileSize(size?: number) {
@@ -222,6 +236,18 @@ async function fetchLatestReleaseFromManifest() {
   return await response.json() as GitHubReleaseResponse;
 }
 
+async function fetchReleaseManifest(manifestUrl: string) {
+  const response = await fetch(manifestUrl, {
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error(`静态更新清单返回 ${response.status}`);
+  }
+
+  return await response.json() as GitHubReleaseResponse;
+}
+
 async function fetchLatestRelease() {
   try {
     return {
@@ -254,6 +280,7 @@ export default function App() {
   const [editorWidthPercent, setEditorWidthPercent] = useState(40);
   const [themeMode, setThemeMode] = useState<ThemeMode>('system');
   const [systemPrefersDark, setSystemPrefersDark] = useState(false);
+  const [webAppDownloadUrl, setWebAppDownloadUrl] = useState(GITHUB_LATEST_RELEASE_URL);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
     state: 'idle',
     message: `当前版本 v${CURRENT_VERSION}，从 GitHub Release 检查最新安装包。`,
@@ -265,6 +292,7 @@ export default function App() {
   const content = activeDocument?.content ?? '';
   const currentFilePath = activeDocument?.filePath ?? null;
   const isDirty = Boolean(activeDocument?.isDirty);
+  const isWebPreview = !isDesktopRuntime();
 
   const loadMarkdownDocument = useCallback((nextContent: string, filePath: string | null = null) => {
     const existingDocument = filePath
@@ -569,6 +597,35 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!isWebPreview) return;
+
+    let isMounted = true;
+    const resolveDownloadAsset = async () => {
+      const localManifestAsset = pickMacArmDownloadAsset((await fetchReleaseManifest('./update.json')).assets);
+      if (localManifestAsset) return localManifestAsset;
+
+      const latestReleaseAsset = pickMacArmDownloadAsset((await fetchLatestRelease()).release.assets);
+      if (latestReleaseAsset) return latestReleaseAsset;
+
+      return pickMacArmDownloadAsset((await fetchLatestReleaseFromManifest()).assets);
+    };
+
+    resolveDownloadAsset()
+      .then((asset) => {
+        if (isMounted && asset?.browser_download_url) {
+          setWebAppDownloadUrl(asset.browser_download_url);
+        }
+      })
+      .catch(() => {
+        // 下载按钮保留 Release 页面兜底，避免更新接口不可用时按钮失效。
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isWebPreview]);
+
+  useEffect(() => {
     if (!window.alunReader) return;
 
     // Electron 菜单通过 preload 发送命令，避免前端直接接触 Node 文件系统。
@@ -866,6 +923,15 @@ export default function App() {
             </span>
           </div>
           <div className="flex items-center gap-4">
+            {isWebPreview && (
+              <a
+                href={webAppDownloadUrl}
+                className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors border ${isDarkTheme ? 'text-slate-200 hover:bg-slate-800 border-slate-700' : 'text-slate-700 hover:bg-slate-100 border-slate-200'}`}
+              >
+                <Download size={16} />
+                下载 macOS Apple Silicon 版
+              </a>
+            )}
             <button 
               onClick={() => setShowEditor(!showEditor)}
               className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors border ${isDarkTheme ? 'text-slate-200 hover:bg-slate-800 border-slate-700' : 'text-slate-700 hover:bg-slate-100 border-slate-200'}`}
@@ -1027,46 +1093,48 @@ export default function App() {
                     })}
                   </div>
                 </section>
-                <section>
-                  <h3 className={`text-sm font-semibold mb-3 ${isDarkTheme ? 'text-slate-100' : 'text-slate-800'}`}>更新</h3>
-                  <div className={`rounded-lg border p-3 ${isDarkTheme ? 'border-slate-800 bg-slate-950 text-slate-300' : 'border-slate-200 bg-white text-slate-600'}`}>
-                    <p className={`text-sm ${updateStatus.state === 'failed' ? isDarkTheme ? 'text-red-200' : 'text-red-700' : isDarkTheme ? 'text-slate-300' : 'text-slate-700'}`}>
-                      {updateStatus.message}
-                    </p>
-                    <p className={`mt-2 text-xs ${isDarkTheme ? 'text-slate-500' : 'text-slate-500'}`}>
-                      当前版本：v{CURRENT_VERSION}{updateStatus.latestVersion ? ` · 最新版本：${updateStatus.latestVersion}` : ''}
-                    </p>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={checkForUpdates}
-                        disabled={updateStatus.state === 'checking' || updateStatus.state === 'downloading'}
-                        className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${isDarkTheme ? 'border-slate-700 text-slate-100 hover:bg-slate-800' : 'border-slate-300 text-slate-700 hover:bg-slate-100'}`}
-                      >
-                        <RefreshCcw size={15} />
-                        检查更新
-                      </button>
-                      {updateStatus.asset && (
+                {!isWebPreview && (
+                  <section>
+                    <h3 className={`text-sm font-semibold mb-3 ${isDarkTheme ? 'text-slate-100' : 'text-slate-800'}`}>更新</h3>
+                    <div className={`rounded-lg border p-3 ${isDarkTheme ? 'border-slate-800 bg-slate-950 text-slate-300' : 'border-slate-200 bg-white text-slate-600'}`}>
+                      <p className={`text-sm ${updateStatus.state === 'failed' ? isDarkTheme ? 'text-red-200' : 'text-red-700' : isDarkTheme ? 'text-slate-300' : 'text-slate-700'}`}>
+                        {updateStatus.message}
+                      </p>
+                      <p className={`mt-2 text-xs ${isDarkTheme ? 'text-slate-500' : 'text-slate-500'}`}>
+                        当前版本：v{CURRENT_VERSION}{updateStatus.latestVersion ? ` · 最新版本：${updateStatus.latestVersion}` : ''}
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
                         <button
-                          onClick={downloadLatestUpdate}
-                          disabled={updateStatus.state === 'downloading'}
-                          className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${isDarkTheme ? 'bg-slate-200 text-slate-950 border-slate-200 hover:bg-white' : 'bg-slate-900 text-white border-slate-900 hover:bg-slate-700'}`}
+                          onClick={checkForUpdates}
+                          disabled={updateStatus.state === 'checking' || updateStatus.state === 'downloading'}
+                          className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${isDarkTheme ? 'border-slate-700 text-slate-100 hover:bg-slate-800' : 'border-slate-300 text-slate-700 hover:bg-slate-100'}`}
                         >
-                          <Download size={15} />
-                          {window.alunReader ? '下载并打开安装包' : '打开下载链接'}
+                          <RefreshCcw size={15} />
+                          检查更新
                         </button>
-                      )}
-                      <a
-                        href={updateStatus.url ?? GITHUB_RELEASES_URL}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={`flex items-center gap-1 text-sm ${isDarkTheme ? 'text-sky-300 hover:text-sky-200' : 'text-slate-700 hover:text-slate-950'}`}
-                      >
-                        Release 页面
-                        <ExternalLink size={14} />
-                      </a>
+                        {updateStatus.asset && (
+                          <button
+                            onClick={downloadLatestUpdate}
+                            disabled={updateStatus.state === 'downloading'}
+                            className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${isDarkTheme ? 'bg-slate-200 text-slate-950 border-slate-200 hover:bg-white' : 'bg-slate-900 text-white border-slate-900 hover:bg-slate-700'}`}
+                          >
+                            <Download size={15} />
+                            下载并打开安装包
+                          </button>
+                        )}
+                        <a
+                          href={updateStatus.url ?? GITHUB_RELEASES_URL}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={`flex items-center gap-1 text-sm ${isDarkTheme ? 'text-sky-300 hover:text-sky-200' : 'text-slate-700 hover:text-slate-950'}`}
+                        >
+                          Release 页面
+                          <ExternalLink size={14} />
+                        </a>
+                      </div>
                     </div>
-                  </div>
-                </section>
+                  </section>
+                )}
               </div>
             </motion.aside>
           </>

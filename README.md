@@ -65,16 +65,17 @@ npm run desktop
 
 浏览器开发模式没有系统保存对话框，点击保存会下载 Markdown 文件。桌面端会真实写入本地文件。
 
-## 发布页和更新检查
+## 网页预览版和更新检查
 
-发布页位于 `docs/index.html`。仓库开启 GitHub Pages 时，建议选择 `main` 分支的 `docs/` 目录作为 Pages 来源。
+网页预览版位于 `docs/index.html`，由 `npm run build:pages` 生成。仓库开启 GitHub Pages 时，建议选择 `main` 分支的 `docs/` 目录作为 Pages 来源。
 
 - 仓库地址：<https://github.com/unknownparticles/md.git>
+- 网页预览版：<https://unknownparticles.github.io/md/>
 - Release 页面：<https://github.com/unknownparticles/md/releases>
 - 最新 Release API：<https://api.github.com/repos/unknownparticles/md/releases/latest>
 - 静态更新清单：<https://unknownparticles.github.io/md/update.json>
 
-应用内“设置 -> 更新 -> 检查更新”和发布页的“检查更新”会优先使用 GitHub Release API。如果 GitHub API 匿名额度耗尽或暂时不可用，会回退到 GitHub Pages 上的静态更新清单 `docs/update.json`。如果仓库没有 Release，且静态清单也不可用，检查结果会显示失败。
+网页预览版会直接打开 Markdown 阅读器界面，并在顶部提供 macOS Apple Silicon 版 App 的下载入口。应用内“设置 -> 更新 -> 检查更新”会优先使用 GitHub Release API。如果 GitHub API 匿名额度耗尽或暂时不可用，会回退到 GitHub Pages 上的静态更新清单 `docs/update.json`。如果仓库没有 Release，且静态清单也不可用，检查结果会显示失败。
 
 桌面端检测到新版本时，会按当前系统优先选择安装包：
 

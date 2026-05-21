@@ -11,6 +11,7 @@
     "dev": "vite --port=3000 --host=0.0.0.0",
     "desktop": "npm run build && electron .",
     "build": "vite build",
+    "build:pages": "node scripts/build-pages.mjs",
     "build:desktop": "npm run build && electron-builder -mwl",
     "build:mac": "npm run build && electron-builder --mac",
     "build:win": "npm run build && electron-builder --win",
