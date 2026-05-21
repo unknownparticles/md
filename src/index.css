@@ -25,10 +25,9 @@
 
 /* Ensure Mermaid SVG text is always crisp and visible */
 .mermaid-container svg {
-  max-width: 100%;
-  width: 100%;
   height: auto;
   background: transparent;
+  max-width: none;
 }
 
 .mermaid-container svg,

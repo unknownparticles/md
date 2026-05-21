@@ -107,6 +107,16 @@ function pickReadableTextColor(fillColor: string | null, isDarkTheme: boolean) {
   return brightness >= 150 ? '#111827' : '#f8fafc';
 }
 
+function getSvgViewBoxSize(svgElement: SVGSVGElement) {
+  const viewBox = svgElement.viewBox?.baseVal;
+  if (!viewBox || viewBox.width <= 0 || viewBox.height <= 0) return null;
+
+  return {
+    width: viewBox.width,
+    height: viewBox.height,
+  };
+}
+
 export const Mermaid: React.FC<MermaidProps> = ({ chart, isDarkTheme }) => {
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
@@ -164,6 +174,17 @@ export const Mermaid: React.FC<MermaidProps> = ({ chart, isDarkTheme }) => {
         label.style.fill = textColor;
         label.style.color = textColor;
       });
+    });
+
+    container.querySelectorAll<SVGSVGElement>('svg').forEach((svgElement) => {
+      const viewBoxSize = getSvgViewBoxSize(svgElement);
+      if (!viewBoxSize) return;
+
+      // Mermaid 默认输出 width="100%"，横向图会被压到容器宽度后高度变得很小。
+      // 这里恢复 viewBox 对应的自然尺寸，把“是否缩放”交给外层缩放组件处理。
+      svgElement.style.width = `${viewBoxSize.width}px`;
+      svgElement.style.height = `${viewBoxSize.height}px`;
+      svgElement.style.maxWidth = 'none';
     });
   }, [svg, isDarkTheme]);
 
@@ -251,14 +272,13 @@ export const Mermaid: React.FC<MermaidProps> = ({ chart, isDarkTheme }) => {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  width: '100%',
-                  minWidth: '100%',
-                  minHeight: '100%',
+                  width: 'max-content',
+                  height: 'max-content',
                 }}
               >
                 <div
                   ref={containerRef}
-                  className="mermaid-container p-10 transition-colors"
+                  className="mermaid-container inline-block p-10 transition-colors"
                   data-theme={isDarkTheme ? 'dark' : 'light'}
                   dangerouslySetInnerHTML={{ __html: svg }}
                 />
