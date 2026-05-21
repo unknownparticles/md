@@ -45,6 +45,18 @@
         "zip"
       ]
     },
+    "fileAssociations": [
+      {
+        "ext": [
+          "md",
+          "markdown",
+          "mdown"
+        ],
+        "name": "Markdown Document",
+        "description": "Markdown document",
+        "role": "Viewer"
+      }
+    ],
     "win": {
       "icon": "assets/icon.png",
       "target": [

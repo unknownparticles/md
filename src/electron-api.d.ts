@@ -22,17 +22,19 @@ export interface UpdateDownloadResult {
 }
 
 export interface MenuCommandMessage {
-  command: 'new' | 'open' | 'open-recent' | 'load-document' | 'save' | 'save-as' | 'set-theme' | 'toggle-editor' | 'toggle-zen';
+  command: 'new' | 'open' | 'open-recent' | 'load-document' | 'load-documents' | 'save' | 'save-as' | 'set-theme' | 'toggle-editor' | 'toggle-zen';
   payload?: {
     filePath?: string;
     content?: string;
+    documents?: MarkdownFilePayload[];
     theme?: ThemeMode;
   };
 }
 
 export interface AlunReaderApi {
-  openMarkdown: () => Promise<MarkdownFilePayload | null>;
+  openMarkdown: () => Promise<MarkdownFilePayload[] | null>;
   openRecent: (filePath: string) => Promise<MarkdownFilePayload>;
+  reloadMarkdown: (filePath: string) => Promise<MarkdownFilePayload>;
   saveMarkdown: (payload: SaveMarkdownPayload) => Promise<{filePath: string} | null>;
   newWindow: () => Promise<void>;
   downloadUpdate: (asset: UpdateAssetPayload) => Promise<UpdateDownloadResult>;

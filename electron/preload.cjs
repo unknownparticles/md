@@ -6,6 +6,7 @@ const {contextBridge, ipcRenderer} = require('electron');
 contextBridge.exposeInMainWorld('alunReader', {
   openMarkdown: () => ipcRenderer.invoke('dialog:open-markdown'),
   openRecent: (filePath) => ipcRenderer.invoke('file:open-recent', filePath),
+  reloadMarkdown: (filePath) => ipcRenderer.invoke('file:reload-markdown', filePath),
   saveMarkdown: (payload) => ipcRenderer.invoke('file:save-markdown', payload),
   newWindow: () => ipcRenderer.invoke('window:new-document'),
   downloadUpdate: (asset) => ipcRenderer.invoke('update:download-open', asset),

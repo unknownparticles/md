@@ -7,6 +7,7 @@ const {pipeline} = require('node:stream/promises');
 
 const recentFilesStorePath = path.join(app.getPath('userData'), 'recent-files.json');
 let recentFiles = [];
+let pendingOpenFilePaths = [];
 
 function sendMenuCommand(targetWindow, command, payload = {}) {
   const focusedWindow = targetWindow ?? BrowserWindow.getFocusedWindow();
@@ -55,11 +56,47 @@ async function openMarkdownFile(filePath) {
   };
 }
 
+async function openMarkdownFiles(filePaths) {
+  const uniqueFilePaths = [...new Set(filePaths.filter(Boolean))];
+  return Promise.all(uniqueFilePaths.map((filePath) => openMarkdownFile(filePath)));
+}
+
+function getMainTargetWindow() {
+  const focusedWindow = BrowserWindow.getFocusedWindow();
+  if (focusedWindow) return focusedWindow;
+
+  const visibleWindow = BrowserWindow.getAllWindows().find((window) => !window.isDestroyed());
+  return visibleWindow ?? createMainWindow();
+}
+
+function sendDocumentsToWindow(targetWindow, documents) {
+  if (!documents.length) return;
+
+  const command = documents.length === 1 ? 'load-document' : 'load-documents';
+  const payload = documents.length === 1 ? documents[0] : {documents};
+  const send = () => sendMenuCommand(targetWindow, command, payload);
+
+  if (targetWindow.webContents.isLoading()) {
+    targetWindow.webContents.once('did-finish-load', send);
+    return;
+  }
+
+  send();
+}
+
+async function openMarkdownFilesInWindow(filePaths, targetWindow = getMainTargetWindow()) {
+  const documents = await openMarkdownFiles(filePaths);
+  sendDocumentsToWindow(targetWindow, documents);
+  if (targetWindow.isMinimized()) targetWindow.restore();
+  targetWindow.focus();
+  return documents;
+}
+
 async function showOpenMarkdownDialog() {
   const focusedWindow = BrowserWindow.getFocusedWindow();
   const result = await dialog.showOpenDialog(focusedWindow ?? undefined, {
     title: '导入 Markdown',
-    properties: ['openFile'],
+    properties: ['openFile', 'multiSelections'],
     filters: [
       {name: 'Markdown 文档', extensions: ['md', 'markdown', 'mdown', 'txt']},
       {name: '所有文件', extensions: ['*']},
@@ -67,16 +104,7 @@ async function showOpenMarkdownDialog() {
   });
 
   if (result.canceled || result.filePaths.length === 0) return null;
-  return openMarkdownFile(result.filePaths[0]);
-}
-
-async function openMarkdownFileInNewWindow(filePath) {
-  const file = await openMarkdownFile(filePath);
-  const window = createMainWindow();
-  window.webContents.once('did-finish-load', () => {
-    sendMenuCommand(window, 'load-document', file);
-  });
-  return file;
+  return openMarkdownFiles(result.filePaths);
 }
 
 async function saveMarkdownFile(filePath, content) {
@@ -100,6 +128,14 @@ async function saveMarkdownFile(filePath, content) {
   await fs.writeFile(targetPath, content, 'utf8');
   rememberRecentFile(targetPath);
   return {filePath: targetPath};
+}
+
+async function reloadMarkdownFile(filePath) {
+  if (!filePath) {
+    throw new Error('当前文档还没有保存到本地文件，无法刷新。');
+  }
+
+  return openMarkdownFile(filePath);
 }
 
 function assertTrustedUpdateUrl(downloadUrl) {
@@ -158,7 +194,7 @@ function buildApplicationMenu() {
     ? recentFiles.map((filePath) => ({
         label: path.basename(filePath),
         sublabel: filePath,
-        click: () => openMarkdownFileInNewWindow(filePath).catch((error) => {
+        click: () => openMarkdownFilesInWindow([filePath]).catch((error) => {
           dialog.showErrorBox('打开最近文件失败', error.message);
         }),
       }))
@@ -186,20 +222,18 @@ function buildApplicationMenu() {
       submenu: [
         {label: '新建窗口', accelerator: 'CmdOrCtrl+N', click: () => createMainWindow()},
         {label: '导入...', accelerator: 'CmdOrCtrl+O', click: async () => {
-          const file = await showOpenMarkdownDialog();
-          if (!file) return;
+          const documents = await showOpenMarkdownDialog();
+          if (!documents) return;
           const focusedWindow = BrowserWindow.getFocusedWindow();
           if (focusedWindow) {
-            sendMenuCommand(focusedWindow, 'load-document', file);
+            sendDocumentsToWindow(focusedWindow, documents);
           }
         }},
         {label: '在新窗口中导入...', accelerator: 'CmdOrCtrl+Shift+O', click: async () => {
-          const file = await showOpenMarkdownDialog();
-          if (!file) return;
+          const documents = await showOpenMarkdownDialog();
+          if (!documents) return;
           const window = createMainWindow();
-          window.webContents.once('did-finish-load', () => {
-            sendMenuCommand(window, 'load-document', file);
-          });
+          sendDocumentsToWindow(window, documents);
         }},
         {type: 'separator'},
         {label: '保存', accelerator: 'CmdOrCtrl+S', click: () => sendMenuCommand(null, 'save')},
@@ -300,28 +334,82 @@ function createMainWindow() {
   return mainWindow;
 }
 
-app.whenReady().then(async () => {
-  await loadRecentFiles();
-  buildApplicationMenu();
-  createMainWindow();
+function getMarkdownFilePathsFromArgv(argv) {
+  return argv
+    .filter((arg) => /\.(md|markdown|mdown|txt)$/i.test(arg))
+    .map((arg) => path.resolve(arg));
+}
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
+function queueOpenFilePaths(filePaths) {
+  pendingOpenFilePaths.push(...filePaths);
+}
+
+async function flushPendingOpenFiles() {
+  if (pendingOpenFilePaths.length === 0) return;
+
+  const filePaths = pendingOpenFilePaths;
+  pendingOpenFilePaths = [];
+
+  try {
+    await openMarkdownFilesInWindow(filePaths);
+  } catch (error) {
+    dialog.showErrorBox('打开 Markdown 文件失败', error.message);
+  }
+}
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event, argv) => {
+    const filePaths = getMarkdownFilePathsFromArgv(argv);
+    if (filePaths.length > 0) {
+      openMarkdownFilesInWindow(filePaths).catch((error) => {
+        dialog.showErrorBox('打开 Markdown 文件失败', error.message);
+      });
     }
   });
-});
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
+  app.on('open-file', (event, filePath) => {
+    event.preventDefault();
 
-ipcMain.handle('dialog:open-markdown', () => showOpenMarkdownDialog());
-ipcMain.handle('file:open-recent', (_event, filePath) => openMarkdownFile(filePath));
-ipcMain.handle('file:save-markdown', (_event, payload) => saveMarkdownFile(payload.filePath, payload.content));
-ipcMain.handle('window:new-document', () => {
-  createMainWindow();
-});
-ipcMain.handle('update:download-open', (_event, asset) => downloadAndOpenUpdateAsset(asset));
+    if (app.isReady()) {
+      openMarkdownFilesInWindow([filePath]).catch((error) => {
+        dialog.showErrorBox('打开 Markdown 文件失败', error.message);
+      });
+      return;
+    }
+
+    queueOpenFilePaths([filePath]);
+  });
+
+  queueOpenFilePaths(getMarkdownFilePathsFromArgv(process.argv.slice(1)));
+
+  app.whenReady().then(async () => {
+    await loadRecentFiles();
+    buildApplicationMenu();
+    createMainWindow();
+    await flushPendingOpenFiles();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createMainWindow();
+      }
+    });
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit();
+    }
+  });
+
+  ipcMain.handle('dialog:open-markdown', () => showOpenMarkdownDialog());
+  ipcMain.handle('file:open-recent', (_event, filePath) => openMarkdownFile(filePath));
+  ipcMain.handle('file:reload-markdown', (_event, filePath) => reloadMarkdownFile(filePath));
+  ipcMain.handle('file:save-markdown', (_event, payload) => saveMarkdownFile(payload.filePath, payload.content));
+  ipcMain.handle('window:new-document', () => {
+    createMainWindow();
+  });
+  ipcMain.handle('update:download-open', (_event, asset) => downloadAndOpenUpdateAsset(asset));
+}

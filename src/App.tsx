@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MarkdownPreview } from './components/MarkdownPreview';
-import { Download, ExternalLink, LayoutDashboard, PanelLeftClose, PanelRightClose, Settings2, FilePlus2, FileUp, RefreshCcw, Save, Sun, Moon, Monitor, X, Presentation, Minimize2 } from 'lucide-react';
+import { Download, ExternalLink, LayoutDashboard, PanelLeftClose, PanelRightClose, Settings2, FilePlus2, FileUp, RefreshCcw, Save, Sun, Moon, Monitor, X, Presentation, Minimize2, FileText, GripVertical, PanelLeftOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import appIcon from '../assets/icon.png';
 import { GITHUB_LATEST_RELEASE_API, GITHUB_RELEASES_URL, UPDATE_MANIFEST_URL } from './release';
@@ -36,6 +36,16 @@ type GitHubReleaseResponse = {
 };
 
 type UpdateSource = 'GitHub Release API' | '静态更新清单';
+
+type OpenDocument = {
+  // 单窗口内的文档标签状态；filePath 为 null 表示还没有保存到本地文件。
+  id: string;
+  content: string;
+  filePath: string | null;
+  isDirty: boolean;
+  isWelcomeDocument: boolean;
+  title: string;
+};
 
 const DEFAULT_MARKDOWN = `# 欢迎使用 alun reader
 
@@ -165,6 +175,27 @@ function formatFileSize(size?: number) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function createDocumentId(filePath: string | null = null) {
+  const stablePrefix = filePath ?? 'untitled';
+  return `${stablePrefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getFileName(filePath: string | null) {
+  if (!filePath) return '未命名.md';
+  return filePath.split(/[\\/]/).pop() || filePath;
+}
+
+function createOpenDocument(content: string, filePath: string | null = null): OpenDocument {
+  return {
+    id: createDocumentId(filePath),
+    content,
+    filePath,
+    isDirty: false,
+    isWelcomeDocument: filePath === null && content === DEFAULT_MARKDOWN,
+    title: getFileName(filePath),
+  };
+}
+
 async function fetchLatestReleaseFromApi() {
   const response = await fetch(GITHUB_LATEST_RELEASE_API, {
     headers: {
@@ -208,13 +239,19 @@ async function fetchLatestRelease() {
 }
 
 export default function App() {
-  const [content, setContent] = useState(DEFAULT_MARKDOWN);
-  const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
-  const [isDirty, setIsDirty] = useState(false);
+  const initialDocumentRef = useRef<OpenDocument | null>(null);
+  if (!initialDocumentRef.current) {
+    initialDocumentRef.current = createOpenDocument(DEFAULT_MARKDOWN, null);
+  }
+
+  const [documents, setDocuments] = useState<OpenDocument[]>([initialDocumentRef.current]);
+  const [activeDocumentId, setActiveDocumentId] = useState(initialDocumentRef.current.id);
   const [statusMessage, setStatusMessage] = useState('未保存的新文档');
   const [showEditor, setShowEditor] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isZenMode, setIsZenMode] = useState(false);
+  const [editorWidthPercent, setEditorWidthPercent] = useState(40);
   const [themeMode, setThemeMode] = useState<ThemeMode>('system');
   const [systemPrefersDark, setSystemPrefersDark] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
@@ -222,28 +259,92 @@ export default function App() {
     message: `当前版本 v${CURRENT_VERSION}，从 GitHub Release 检查最新安装包。`,
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const draggingDocumentIdRef = useRef<string | null>(null);
+
+  const activeDocument = documents.find((document) => document.id === activeDocumentId) ?? documents[0];
+  const content = activeDocument?.content ?? '';
+  const currentFilePath = activeDocument?.filePath ?? null;
+  const isDirty = Boolean(activeDocument?.isDirty);
 
   const loadMarkdownDocument = useCallback((nextContent: string, filePath: string | null = null) => {
-    setContent(nextContent);
-    setCurrentFilePath(filePath);
-    setIsDirty(false);
-    setStatusMessage(filePath ? `已打开 ${filePath.split('/').pop()}` : '未保存的新文档');
-  }, []);
+    const existingDocument = filePath
+      ? documents.find((document) => document.filePath === filePath)
+      : null;
 
-  const createNewDocument = useCallback(async () => {
-    if (window.alunReader) {
-      await window.alunReader.newWindow();
+    if (existingDocument) {
+      setActiveDocumentId(existingDocument.id);
+      setStatusMessage(`已切换 ${existingDocument.title}`);
       return;
     }
 
+    const nextDocument = createOpenDocument(nextContent, filePath);
+    setDocuments((items) => {
+      const onlyWelcomeDocument = items.length === 1 && items[0].isWelcomeDocument && !items[0].isDirty;
+      return onlyWelcomeDocument ? [nextDocument] : [...items, nextDocument];
+    });
+    setActiveDocumentId(nextDocument.id);
+    setStatusMessage(filePath ? `已打开 ${getFileName(filePath)}` : '已创建未命名文档');
+  }, [documents]);
+
+  const updateActiveDocument = useCallback((updater: (document: OpenDocument) => OpenDocument) => {
+    setDocuments((items) => items.map((document) => (
+      document.id === activeDocumentId ? updater(document) : document
+    )));
+  }, [activeDocumentId]);
+
+  const closeDocument = useCallback((documentId: string) => {
+    const closingDocument = documents.find((document) => document.id === documentId);
+    if (closingDocument?.isDirty) {
+      const shouldClose = window.confirm(`"${closingDocument.title}" 有未保存更改，确认关闭吗？`);
+      if (!shouldClose) return;
+    }
+
+    setDocuments((items) => {
+      const closingIndex = items.findIndex((document) => document.id === documentId);
+      if (closingIndex < 0) return items;
+
+      if (items.length === 1) {
+        const emptyDocument = createOpenDocument('', null);
+        setActiveDocumentId(emptyDocument.id);
+        setStatusMessage('已关闭最后一个文档，保留空白页');
+        return [emptyDocument];
+      }
+
+      const nextItems = items.filter((document) => document.id !== documentId);
+      if (activeDocumentId === documentId) {
+        const fallbackDocument = nextItems[Math.min(closingIndex, nextItems.length - 1)];
+        setActiveDocumentId(fallbackDocument.id);
+        setStatusMessage(`已切换 ${fallbackDocument.title}`);
+      }
+      return nextItems;
+    });
+  }, [activeDocumentId, documents]);
+
+  const reorderDocument = useCallback((targetDocumentId: string) => {
+    const draggingDocumentId = draggingDocumentIdRef.current;
+    if (!draggingDocumentId || draggingDocumentId === targetDocumentId) return;
+
+    setDocuments((items) => {
+      const sourceIndex = items.findIndex((document) => document.id === draggingDocumentId);
+      const targetIndex = items.findIndex((document) => document.id === targetDocumentId);
+      if (sourceIndex < 0 || targetIndex < 0) return items;
+
+      const nextItems = [...items];
+      const [movedDocument] = nextItems.splice(sourceIndex, 1);
+      nextItems.splice(targetIndex, 0, movedDocument);
+      return nextItems;
+    });
+  }, []);
+
+  const createNewDocument = useCallback(async () => {
     loadMarkdownDocument('', null);
   }, [loadMarkdownDocument]);
 
   const openMarkdownDocument = useCallback(async () => {
     if (window.alunReader) {
-      const result = await window.alunReader.openMarkdown();
-      if (result) {
-        loadMarkdownDocument(result.content, result.filePath);
+      const documents = await window.alunReader.openMarkdown();
+      if (documents) {
+        documents.forEach((document) => loadMarkdownDocument(document.content, document.filePath));
       }
       return;
     }
@@ -252,32 +353,109 @@ export default function App() {
   }, [loadMarkdownDocument]);
 
   const saveMarkdownDocument = useCallback(async (saveAs = false) => {
+    if (!activeDocument) return;
+
     if (!window.alunReader) {
-      const blob = new Blob([content], {type: 'text/markdown;charset=utf-8'});
+      const blob = new Blob([activeDocument.content], {type: 'text/markdown;charset=utf-8'});
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = currentFilePath?.split('/').pop() || '未命名.md';
+      link.download = activeDocument.title;
       link.click();
       URL.revokeObjectURL(url);
-      setIsDirty(false);
+      updateActiveDocument((document) => ({...document, isDirty: false}));
       setStatusMessage('已下载 Markdown 文件');
       return;
     }
 
     const result = await window.alunReader.saveMarkdown({
-      filePath: saveAs ? null : currentFilePath,
-      content,
+      filePath: saveAs ? null : activeDocument.filePath,
+      content: activeDocument.content,
     });
 
     if (result) {
-      setCurrentFilePath(result.filePath);
-      setIsDirty(false);
-      setStatusMessage(`已保存 ${result.filePath.split('/').pop()}`);
+      updateActiveDocument((document) => ({
+        ...document,
+        filePath: result.filePath,
+        isDirty: false,
+        title: getFileName(result.filePath),
+      }));
+      setStatusMessage(`已保存 ${getFileName(result.filePath)}`);
     } else {
       setStatusMessage('已取消保存');
     }
-  }, [content, currentFilePath]);
+  }, [activeDocument, updateActiveDocument]);
+
+  const refreshActiveDocument = useCallback(async () => {
+    if (!activeDocument?.filePath) {
+      setStatusMessage('当前文档还没有本地文件，无法刷新');
+      return;
+    }
+
+    if (!window.alunReader) {
+      setStatusMessage('浏览器预览模式不支持从磁盘刷新');
+      return;
+    }
+
+    if (activeDocument.isDirty) {
+      const shouldReload = window.confirm(`"${activeDocument.title}" 有未保存更改，刷新会用磁盘内容覆盖当前编辑内容，确认刷新吗？`);
+      if (!shouldReload) return;
+    }
+
+    try {
+      const reloadedDocument = await window.alunReader.reloadMarkdown(activeDocument.filePath);
+      updateActiveDocument((document) => ({
+        ...document,
+        content: reloadedDocument.content,
+        filePath: reloadedDocument.filePath,
+        isDirty: false,
+        isWelcomeDocument: false,
+        title: getFileName(reloadedDocument.filePath),
+      }));
+      setStatusMessage(`已刷新 ${getFileName(reloadedDocument.filePath)}`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? `刷新失败：${error.message}` : '刷新失败：无法读取文件');
+    }
+  }, [activeDocument, updateActiveDocument]);
+
+  const resizeEditorFromPointer = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    const splitterElement = event.currentTarget;
+    const mainElement = splitterElement.closest('main');
+    if (!mainElement) return;
+
+    event.preventDefault();
+    const bounds = mainElement.getBoundingClientRect();
+    const pointerId = event.pointerId;
+    splitterElement.setPointerCapture(pointerId);
+
+    const updateEditorWidth = (clientX: number) => {
+      const nextPercent = ((clientX - bounds.left) / bounds.width) * 100;
+      setEditorWidthPercent(Math.min(70, Math.max(24, nextPercent)));
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      updateEditorWidth(moveEvent.clientX);
+    };
+
+    const stopResize = () => {
+      if (splitterElement.hasPointerCapture(pointerId)) {
+        splitterElement.releasePointerCapture(pointerId);
+      }
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopResize);
+      window.removeEventListener('pointercancel', stopResize);
+      window.removeEventListener('blur', stopResize);
+      splitterElement.removeEventListener('lostpointercapture', stopResize);
+    };
+
+    updateEditorWidth(event.clientX);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', stopResize);
+    window.addEventListener('pointercancel', stopResize);
+    window.addEventListener('blur', stopResize);
+    // lostpointercapture 覆盖浏览器或系统主动结束拖拽的情况，避免留下全局移动监听。
+    splitterElement.addEventListener('lostpointercapture', stopResize);
+  }, []);
 
   const checkForUpdates = useCallback(async () => {
     setUpdateStatus({
@@ -410,6 +588,15 @@ export default function App() {
         return;
       }
 
+      if (command === 'load-documents' && Array.isArray(payload?.documents)) {
+        payload.documents.forEach((document) => {
+          if (typeof document.content === 'string') {
+            loadMarkdownDocument(document.content, document.filePath ?? null);
+          }
+        });
+        return;
+      }
+
       if (command === 'open-recent' && payload?.filePath) {
         const result = await window.alunReader?.openRecent(payload.filePath);
         if (result) {
@@ -475,30 +662,197 @@ export default function App() {
       />
       {/* Zen 模式用于投屏讲解，只保留阅读内容和退出按钮。 */}
       {!isZenMode && (
-      <aside className={`w-16 flex-none border-r flex flex-col items-center py-6 gap-8 shadow-sm z-20 transition-colors ${isDarkTheme ? 'bg-[#151b22] border-slate-700/70' : 'bg-white border-slate-200'}`}>
-        <div className={`w-10 h-10 rounded-lg border flex items-center justify-center overflow-hidden transition-colors ${isDarkTheme ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-          <img src={appIcon} alt="alun reader" className="h-8 w-8 object-contain" />
-        </div>
-        <nav className="flex flex-col gap-4">
-          <button className={`p-2.5 rounded-lg border ${accentSoftClass}`} title="阅读视图"><LayoutDashboard size={22} /></button>
-          <button
-            onClick={createNewDocument}
-            className={`p-2.5 rounded-lg transition-colors ${isDarkTheme ? 'text-slate-400 hover:text-slate-100 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'}`}
-            title="新建窗口"
-          >
-            <FilePlus2 size={22} />
-          </button>
-        </nav>
-        <div className="mt-auto pb-2 flex flex-col gap-6">
-          <button
-            onClick={() => setShowSettings(true)}
-            className={`p-2.5 rounded-lg transition-colors ${showSettings ? accentSoftClass : isDarkTheme ? 'text-slate-500 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
-            title="设置"
-          >
-            <Settings2 size={22} />
-          </button>
-        </div>
-      </aside>
+        <aside className={`${isSidebarCollapsed ? 'w-16' : 'w-72'} flex-none border-r flex flex-col shadow-sm z-20 transition-all ${isDarkTheme ? 'bg-[#151b22] border-slate-700/70' : 'bg-white border-slate-200'}`}>
+          {isSidebarCollapsed ? (
+            <>
+              <div className={`h-16 border-b flex items-center justify-center transition-colors ${isDarkTheme ? 'border-slate-700/70' : 'border-slate-200'}`}>
+                <button
+                  onClick={() => setIsSidebarCollapsed(false)}
+                  className={`p-2 rounded-lg transition-colors ${isDarkTheme ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}
+                  title="展开侧边栏"
+                >
+                  <PanelLeftOpen size={20} />
+                </button>
+              </div>
+              <div className="flex flex-col items-center gap-3 py-3">
+                <button
+                  onClick={createNewDocument}
+                  className={`p-2.5 rounded-lg transition-colors ${isDarkTheme ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}
+                  title="新建文档"
+                >
+                  <FilePlus2 size={20} />
+                </button>
+                <button
+                  onClick={openMarkdownDocument}
+                  className={`p-2.5 rounded-lg transition-colors ${isDarkTheme ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}
+                  title="打开文件"
+                >
+                  <FileUp size={20} />
+                </button>
+                <button
+                  onClick={refreshActiveDocument}
+                  className={`p-2.5 rounded-lg transition-colors ${isDarkTheme ? 'text-slate-300 hover:bg-slate-800 disabled:text-slate-700' : 'text-slate-600 hover:bg-slate-100 disabled:text-slate-300'}`}
+                  disabled={!activeDocument?.filePath}
+                  title="刷新当前文件"
+                >
+                  <RefreshCcw size={20} />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+                <div className="space-y-2">
+                  {documents.map((document) => {
+                    const isActive = document.id === activeDocumentId;
+                    return (
+                      <button
+                        key={document.id}
+                        onClick={() => {
+                          setActiveDocumentId(document.id);
+                          setStatusMessage(`已切换 ${document.title}`);
+                        }}
+                        className={`relative flex h-10 w-10 items-center justify-center rounded-lg border transition-colors ${
+                          isActive
+                            ? accentSoftClass
+                            : isDarkTheme
+                              ? 'border-transparent text-slate-400 hover:bg-slate-800'
+                              : 'border-transparent text-slate-500 hover:bg-slate-100'
+                        }`}
+                        title={document.title}
+                      >
+                        <FileText size={18} />
+                        {document.isDirty && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-sky-400" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className={`border-t p-2 transition-colors ${isDarkTheme ? 'border-slate-800' : 'border-slate-100'}`}>
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className={`w-full rounded-lg p-2 transition-colors ${showSettings ? accentSoftClass : isDarkTheme ? 'text-slate-400 hover:text-slate-100 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'}`}
+                  title="设置"
+                >
+                  <Settings2 size={18} />
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+          <div className={`h-16 px-4 border-b flex items-center gap-3 transition-colors ${isDarkTheme ? 'border-slate-700/70' : 'border-slate-200'}`}>
+            <div className={`h-11 w-11 shrink-0 rounded-lg border flex items-center justify-center transition-colors ${isDarkTheme ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <img src={appIcon} alt="alun reader" className="h-9 w-9 shrink-0 object-contain" />
+            </div>
+            <div className="min-w-0">
+              <p className={`font-display text-sm font-semibold ${isDarkTheme ? 'text-slate-100' : 'text-slate-800'}`}>alun reader</p>
+              <p className={`text-xs ${isDarkTheme ? 'text-slate-500' : 'text-slate-500'}`}>{documents.length} 个文档</p>
+            </div>
+            <button
+              onClick={() => setIsSidebarCollapsed(true)}
+              className={`ml-auto p-2 rounded-lg border ${accentSoftClass}`}
+              title="收起侧边栏"
+            >
+              <PanelLeftClose size={18} />
+            </button>
+          </div>
+
+          <div className={`px-3 py-3 border-b grid grid-cols-3 gap-2 transition-colors ${isDarkTheme ? 'border-slate-800' : 'border-slate-100'}`}>
+            <button
+              onClick={createNewDocument}
+              className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-sm font-medium transition-colors ${isDarkTheme ? 'border-slate-700 text-slate-200 hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-100'}`}
+              title="新建文档"
+            >
+              <FilePlus2 size={16} />
+              新建
+            </button>
+            <button
+              onClick={openMarkdownDocument}
+              className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-sm font-medium transition-colors ${isDarkTheme ? 'border-slate-700 text-slate-200 hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-100'}`}
+              title="打开文件"
+            >
+              <FileUp size={16} />
+              打开
+            </button>
+            <button
+              onClick={refreshActiveDocument}
+              disabled={!activeDocument?.filePath}
+              className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${isDarkTheme ? 'border-slate-700 text-slate-200 hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-100'}`}
+              title="刷新当前文件"
+            >
+              <RefreshCcw size={16} />
+              刷新
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+            <div className="space-y-1">
+              {documents.map((document) => {
+                const isActive = document.id === activeDocumentId;
+                return (
+                  <div
+                    key={document.id}
+                    draggable
+                    onDragStart={() => {
+                      draggingDocumentIdRef.current = document.id;
+                    }}
+                    onDragEnter={(event) => {
+                      event.preventDefault();
+                      reorderDocument(document.id);
+                    }}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDragEnd={() => {
+                      draggingDocumentIdRef.current = null;
+                    }}
+                    className={`group flex items-center gap-2 rounded-lg border px-2 py-2 transition-colors ${
+                      isActive
+                        ? accentSoftClass
+                        : isDarkTheme
+                          ? 'border-transparent text-slate-300 hover:bg-slate-800/80'
+                          : 'border-transparent text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <GripVertical size={14} className={isActive ? accentTextClass : 'text-slate-400'} />
+                    <button
+                      onClick={() => {
+                        setActiveDocumentId(document.id);
+                        setStatusMessage(`已切换 ${document.title}`);
+                      }}
+                      className="min-w-0 flex-1 text-left"
+                      title={document.filePath ?? document.title}
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <FileText size={15} className={isActive ? accentTextClass : 'text-slate-400'} />
+                        <span className="truncate text-sm font-medium">{document.title}</span>
+                        {document.isDirty && <span className={isActive ? accentTextClass : 'text-sky-500'}>*</span>}
+                      </span>
+                      <span className={`block truncate pl-6 text-[11px] ${isActive ? accentTextClass : isDarkTheme ? 'text-slate-500' : 'text-slate-400'}`}>
+                        {document.filePath ?? '未保存的新文档'}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => closeDocument(document.id)}
+                      className={`rounded-md p-1 opacity-0 transition-opacity group-hover:opacity-100 ${isDarkTheme ? 'hover:bg-slate-700' : 'hover:bg-slate-200'}`}
+                      title="关闭文档"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className={`border-t p-3 transition-colors ${isDarkTheme ? 'border-slate-800' : 'border-slate-100'}`}>
+            <button
+              onClick={() => setShowSettings(true)}
+              className={`w-full flex items-center justify-center gap-2 rounded-lg p-2 text-sm transition-colors ${showSettings ? accentSoftClass : isDarkTheme ? 'text-slate-400 hover:text-slate-100 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'}`}
+              title="设置"
+            >
+              <Settings2 size={16} />
+              设置
+            </button>
+          </div>
+            </>
+          )}
+        </aside>
       )}
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -512,20 +866,6 @@ export default function App() {
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <button
-              onClick={createNewDocument}
-              className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors border ${isDarkTheme ? 'text-slate-200 hover:bg-slate-800 border-slate-700' : 'text-slate-700 hover:bg-slate-100 border-slate-200'}`}
-            >
-              <FilePlus2 size={16} />
-              新建
-            </button>
-            <button 
-              onClick={openMarkdownDocument}
-              className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors border ${isDarkTheme ? 'text-slate-200 hover:bg-slate-800 border-slate-700' : 'text-slate-700 hover:bg-slate-100 border-slate-200'}`}
-            >
-              <FileUp size={16} />
-              打开文件
-            </button>
             <button 
               onClick={() => setShowEditor(!showEditor)}
               className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors border ${isDarkTheme ? 'text-slate-200 hover:bg-slate-800 border-slate-700' : 'text-slate-700 hover:bg-slate-100 border-slate-200'}`}
@@ -557,7 +897,8 @@ export default function App() {
         <main className="flex-1 flex overflow-hidden">
           {showEditor && !isZenMode && (
               <div
-                className={`w-[40%] border-r flex flex-col shrink-0 transition-colors ${isDarkTheme ? 'bg-[#151b22] border-slate-700/70' : 'bg-white border-slate-200'}`}
+                className={`flex flex-col shrink-0 transition-colors ${isDarkTheme ? 'bg-[#151b22]' : 'bg-white'}`}
+                style={{width: `${editorWidthPercent}%`}}
               >
                 <div className={`p-4 border-b flex items-center justify-between transition-colors ${isDarkTheme ? 'bg-[#151b22] border-slate-700/70' : 'bg-white border-slate-100'}`}>
                   <span className="text-xs font-bold text-slate-400 tracking-widest flex items-center gap-2">
@@ -568,15 +909,41 @@ export default function App() {
                 <textarea
                   value={content}
                   onChange={(e) => {
-                    setContent(e.target.value);
-                    setIsDirty(true);
-                    setStatusMessage(currentFilePath ? currentFilePath.split('/').pop() || currentFilePath : '未保存的新文档');
+                    const nextContent = e.target.value;
+                    updateActiveDocument((document) => ({
+                      ...document,
+                      content: nextContent,
+                      isDirty: true,
+                    }));
+                    setStatusMessage(currentFilePath ? getFileName(currentFilePath) : '未保存的新文档');
                   }}
                   className={`flex-1 p-6 font-mono text-sm resize-none focus:outline-none transition-colors ${isDarkTheme ? 'text-slate-100 bg-slate-950 placeholder:text-slate-500' : 'text-slate-700 bg-[#fdfdfd] placeholder:text-slate-400'}`}
                   spellCheck={false}
                   placeholder="在这里输入 Markdown 内容..."
                 />
               </div>
+          )}
+
+          {showEditor && !isZenMode && (
+            <button
+              type="button"
+              aria-label="拖动调整编辑器和预览比例"
+              title="拖动调整编辑器和预览比例"
+              onPointerDown={resizeEditorFromPointer}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowLeft') {
+                  event.preventDefault();
+                  setEditorWidthPercent((value) => Math.max(24, value - 2));
+                }
+                if (event.key === 'ArrowRight') {
+                  event.preventDefault();
+                  setEditorWidthPercent((value) => Math.min(70, value + 2));
+                }
+              }}
+              className={`group relative w-2 flex-none cursor-col-resize border-x focus:outline-none focus:ring-2 focus:ring-sky-400 ${isDarkTheme ? 'border-slate-700/70 bg-[#151b22] hover:bg-slate-800' : 'border-slate-200 bg-white hover:bg-slate-100'}`}
+            >
+              <span className={`absolute left-1/2 top-1/2 h-10 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors ${isDarkTheme ? 'bg-slate-600 group-hover:bg-sky-300' : 'bg-slate-300 group-hover:bg-slate-600'}`} />
+            </button>
           )}
 
           <section className={`flex-1 overflow-y-auto scroll-smooth transition-colors ${isZenMode ? 'px-10 md:px-16 lg:px-24' : 'px-8 md:px-12 lg:px-16'} ${isDarkTheme ? 'bg-[#11161c]' : 'bg-[#f6f7f8]'}`}>
