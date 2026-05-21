@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -10,6 +10,26 @@ interface MarkdownPreviewProps {
   content: string;
   className?: string;
   isDarkTheme: boolean;
+}
+
+function TaskListCheckbox({checked, ...props}: any) {
+  const [previewChecked, setPreviewChecked] = useState(Boolean(checked));
+
+  useEffect(() => {
+    setPreviewChecked(Boolean(checked));
+  }, [checked]);
+
+  return (
+    <input
+      {...props}
+      type="checkbox"
+      checked={previewChecked}
+      aria-label="切换任务完成状态"
+      className="markdown-task-checkbox mr-2 align-[-0.1em]"
+      // react-markdown 默认禁用任务列表复选框；预览区只维护本地状态，不反写 Markdown 源文档。
+      onChange={(event) => setPreviewChecked(event.currentTarget.checked)}
+    />
+  );
 }
 
 function createMarkdownComponents(isDarkTheme: boolean) {
@@ -72,6 +92,13 @@ function createMarkdownComponents(isDarkTheme: boolean) {
     ul: ({children}: any) => <ul className={`list-disc space-y-2 mb-4 ml-6 ${colors.text}`}>{children}</ul>,
     ol: ({children}: any) => <ol className={`list-decimal space-y-2 mb-4 ml-6 ${colors.text}`}>{children}</ol>,
     li: ({children}: any) => <li className="pl-1 leading-7">{children}</li>,
+    input: ({node, type, checked, disabled, ...props}: any) => {
+      if (type !== 'checkbox') {
+        return <input type={type} checked={checked} disabled={disabled} {...props} />;
+      }
+
+      return <TaskListCheckbox {...props} checked={checked} />;
+    },
     a: ({children, href}: any) => (
       <a href={href} className={isDarkTheme ? 'text-sky-300 underline decoration-sky-500/50 underline-offset-4' : 'text-slate-900 underline decoration-slate-400 underline-offset-4'}>
         {children}
