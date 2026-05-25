@@ -1,12 +1,17 @@
 {
-  "tag_name": "v1.1.0",
-  "name": "alun reader 1.1.0",
-  "html_url": "https://github.com/unknownparticles/md/releases/tag/v1.1.0",
+  "tag_name": "v1.1.1",
+  "name": "alun reader 1.1.1",
+  "html_url": "https://github.com/unknownparticles/md/releases/tag/v1.1.1",
   "assets": [
     {
-      "name": "alun.reader-1.1.0-arm64.dmg",
-      "browser_download_url": "https://github.com/unknownparticles/md/releases/download/v1.1.0/alun.reader-1.1.0-arm64.dmg",
-      "size": 120074323
+      "name": "alun.reader-1.1.1-arm64.dmg",
+      "browser_download_url": "https://github.com/unknownparticles/md/releases/download/v1.1.1/alun.reader-1.1.1-arm64.dmg",
+      "size": 120079366
+    },
+    {
+      "name": "alun.reader-1.1.1-x64.zip",
+      "browser_download_url": "https://github.com/unknownparticles/md/releases/download/v1.1.1/alun.reader-1.1.1-x64.zip",
+      "size": 141487277
     }
   ]
 }

@@ -183,6 +183,26 @@ function pickMacArmDownloadAsset(assets: UpdateReleaseAsset[] = []) {
   return macArmAsset ?? downloadableAssets.find((asset) => asset.name.toLowerCase().endsWith('.dmg')) ?? null;
 }
 
+function pickWebPreviewDownloadAsset(assets: UpdateReleaseAsset[] = []) {
+  const downloadableAssets = assets.filter((asset) => Boolean(asset.browser_download_url));
+  const currentPlatform = getRuntimePlatform();
+
+  if (currentPlatform === 'windows') {
+    const windowsX64Asset = downloadableAssets.find((asset) => {
+      const name = asset.name.toLowerCase();
+      return (name.endsWith('.exe') || name.endsWith('.msi') || name.endsWith('.zip')) &&
+        (name.includes('x64') || name.includes('win') || name.includes('windows'));
+    });
+
+    if (windowsX64Asset) return windowsX64Asset;
+  }
+
+  // 网页预览主要服务桌面安装包下载；未知平台默认给出 mac M 系列包，保持旧入口可用。
+  return pickMacArmDownloadAsset(downloadableAssets) ??
+    downloadableAssets.find((asset) => asset.name.toLowerCase().endsWith('.zip')) ??
+    null;
+}
+
 function formatFileSize(size?: number) {
   if (!size) return '';
   if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
@@ -601,13 +621,13 @@ export default function App() {
 
     let isMounted = true;
     const resolveDownloadAsset = async () => {
-      const localManifestAsset = pickMacArmDownloadAsset((await fetchReleaseManifest('./update.json')).assets);
+      const localManifestAsset = pickWebPreviewDownloadAsset((await fetchReleaseManifest('./update.json')).assets);
       if (localManifestAsset) return localManifestAsset;
 
-      const latestReleaseAsset = pickMacArmDownloadAsset((await fetchLatestRelease()).release.assets);
+      const latestReleaseAsset = pickWebPreviewDownloadAsset((await fetchLatestRelease()).release.assets);
       if (latestReleaseAsset) return latestReleaseAsset;
 
-      return pickMacArmDownloadAsset((await fetchLatestReleaseFromManifest()).assets);
+      return pickWebPreviewDownloadAsset((await fetchLatestReleaseFromManifest()).assets);
     };
 
     resolveDownloadAsset()
@@ -929,7 +949,7 @@ export default function App() {
                 className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors border ${isDarkTheme ? 'text-slate-200 hover:bg-slate-800 border-slate-700' : 'text-slate-700 hover:bg-slate-100 border-slate-200'}`}
               >
                 <Download size={16} />
-                下载 macOS Apple Silicon 版
+                下载 App
               </a>
             )}
             <button 

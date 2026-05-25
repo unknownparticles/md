@@ -73,9 +73,24 @@ function configureMermaid(isDarkTheme: boolean) {
     startOnLoad: false,
     theme: 'base',
     securityLevel: 'loose',
+    // Mermaid 11 会在语法错误时默认把错误图写进 DOM；应用自己展示错误即可。
+    suppressErrorRendering: true,
     fontFamily: mermaidFontFamily,
     themeVariables: getMermaidThemeVariables(isDarkTheme),
   });
+}
+
+function createMermaidRenderTarget() {
+  const target = document.createElement('div');
+  target.setAttribute('aria-hidden', 'true');
+  target.style.position = 'fixed';
+  target.style.left = '-10000px';
+  target.style.top = '-10000px';
+  target.style.width = '1px';
+  target.style.height = '1px';
+  target.style.overflow = 'hidden';
+  document.body.appendChild(target);
+  return target;
 }
 
 function parseSvgColor(color: string | null) {
@@ -139,22 +154,42 @@ export const Mermaid: React.FC<MermaidProps> = ({ chart, isDarkTheme }) => {
   }, []);
 
   useEffect(() => {
+    let isCurrentRender = true;
+    const renderTarget = createMermaidRenderTarget();
+
     const renderChart = async () => {
-      if (!chart) return;
+      if (!chart) {
+        setSvg('');
+        setError(null);
+        return;
+      }
 
       try {
         setError(null);
+        setSvg('');
         configureMermaid(isDarkTheme);
         const uniqueId = `mermaid-${reactId}-${Date.now()}`;
-        const { svg: renderedSvg } = await mermaid.render(uniqueId, chart);
+        const { svg: renderedSvg } = await mermaid.render(uniqueId, chart, renderTarget);
+        if (!isCurrentRender) return;
+
         setSvg(renderedSvg);
       } catch (err: any) {
+        if (!isCurrentRender) return;
+
         console.error('Mermaid rendering failed:', err);
+        setSvg('');
         setError('Mermaid 语法错误，请检查代码。');
+      } finally {
+        renderTarget.remove();
       }
     };
 
     renderChart();
+
+    return () => {
+      isCurrentRender = false;
+      renderTarget.remove();
+    };
   }, [chart, isDarkTheme, reactId]);
 
   useEffect(() => {
